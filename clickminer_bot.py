@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
-TOKEN = "ضع_التوكن_هنا"
+TOKEN = "8035703916:AAGWMl61OI-9t4CmEGzD3lNlS0HKpn7DH_c"
 
 # قاعدة البيانات
 conn = sqlite3.connect("miner_bot.db")
