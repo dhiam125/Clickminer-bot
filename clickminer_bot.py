@@ -1,89 +1,70 @@
-
-import logging
+import os
 import sqlite3
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackContext, CallbackQueryHandler
 
-logging.basicConfig(level=logging.INFO)
-TOKEN = 8035703916:AAGWMl61OI-9t4CmEGzD3lNlS0HKpn7DH_c
+# الحصول على التوكن من المتغير البيئي
+TOKEN = os.environ.get("TOKEN")
 
-# قاعدة البيانات
-conn = sqlite3.connect("miner_bot.db")
-c = conn.cursor()
-c.execute("""
+# إعداد قاعدة البيانات
+conn = sqlite3.connect("clickminer.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute('''
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
-    username TEXT,
-    coins INTEGER DEFAULT 0,
-    wallet_address TEXT
+    balance INTEGER DEFAULT 0
 )
-""")
-c.execute("""
-CREATE TABLE IF NOT EXISTS withdrawals (
-    user_id INTEGER,
-    coins INTEGER,
-    status TEXT DEFAULT 'pending',
-    requested_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-""")
+''')
 conn.commit()
-conn.close()
 
 # أوامر البوت
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def start(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    username = update.effective_user.username or ""
-    conn = sqlite3.connect("miner_bot.db")
-    c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
+    cursor.execute("INSERT OR IGNORE INTO users (user_id) VALUES (?)", (user_id,))
     conn.commit()
-    conn.close()
-    await update.message.reply_text("أهلاً بك في ClickMiner!")
+    update.message.reply_text("🎮 مرحبًا بك في لعبة ClickMiner! استخدم /mine للتعدين. 💰")
 
-async def mine(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def mine(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    conn = sqlite3.connect("miner_bot.db")
-    c = conn.cursor()
-    c.execute("UPDATE users SET coins = coins + 1 WHERE user_id = ?", (user_id,))
+    cursor.execute("UPDATE users SET balance = balance + 1 WHERE user_id = ?", (user_id,))
     conn.commit()
-    c.execute("SELECT coins FROM users WHERE user_id = ?", (user_id,))
-    coins = c.fetchone()[0]
-    conn.close()
-    await update.message.reply_text(f"تم التعدين! رصيدك الآن: {coins} عملة")
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    balance = cursor.fetchone()[0]
+    update.message.reply_text(f"🪙 نقرت! رصيدك الآن: {balance} قطعة رقمية.")
 
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def balance(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    conn = sqlite3.connect("miner_bot.db")
-    c = conn.cursor()
-    c.execute("SELECT coins FROM users WHERE user_id = ?", (user_id,))
-    result = c.fetchone()
-    conn.close()
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
     if result:
-        await update.message.reply_text(f"رصيدك الحالي: {result[0]} عملة")
+        update.message.reply_text(f"💼 رصيدك الحالي: {result[0]} قطعة.")
     else:
-        await update.message.reply_text("الرجاء استخدام /start أولاً.")
+        update.message.reply_text("❌ لم يتم العثور على حساب. استخدم /start أولاً.")
 
-async def withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def withdraw(update: Update, context: CallbackContext):
     user_id = update.effective_user.id
-    conn = sqlite3.connect("miner_bot.db")
-    c = conn.cursor()
-    c.execute("SELECT coins FROM users WHERE user_id = ?", (user_id,))
-    result = c.fetchone()
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
     if result and result[0] >= 10:
-        c.execute("INSERT INTO withdrawals (user_id, coins) VALUES (?, ?)", (user_id, result[0]))
-        c.execute("UPDATE users SET coins = 0 WHERE user_id = ?", (user_id,))
-        msg = f"تم طلب السحب {result[0]} عملة، سيتم المراجعة من قبل المسؤول."
+        cursor.execute("UPDATE users SET balance = balance - 10 WHERE user_id = ?", (user_id,))
+        conn.commit()
+        update.message.reply_text("✅ تم سحب 10 عملات. سيتم تحويل المكافأة لاحقًا.")
     else:
-        msg = "يجب أن تمتلك 10 عملات على الأقل للسحب."
-    conn.commit()
-    conn.close()
-    await update.message.reply_text(msg)
+        update.message.reply_text("❌ تحتاج إلى 10 عملات على الأقل للسحب.")
 
 # التشغيل
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("mine", mine))
-app.add_handler(CommandHandler("balance", balance))
-app.add_handler(CommandHandler("withdraw", withdraw))
+def main():
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-app.run_polling()
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("mine", mine))
+    dp.add_handler(CommandHandler("balance", balance))
+    dp.add_handler(CommandHandler("withdraw", withdraw))
+
+    updater.start_polling()
+    updater.idle()
+
+if __name__ == '__main__':
+    main()
